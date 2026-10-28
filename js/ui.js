@@ -17,7 +17,10 @@ const elements = {
   cityResults: document.querySelector("#city-results"),
   celsiusButton: document.querySelector("#celsius-button"),
   fahrenheitButton: document.querySelector("#fahrenheit-button"),
+  currentCard: document.querySelector(".current-card"),
 };
+
+let savedForecastContent;
 
 function displayTemperature(celsius, unit) {
   const temperature = unit === "fahrenheit" ? (celsius * 9) / 5 + 32 : celsius;
@@ -102,13 +105,14 @@ export function renderFavorites(favorites, activeCityId, onSelect, onRemove, uni
       const selectButton = document.createElement("button");
       selectButton.className = "favorite-city-button";
       selectButton.type = "button";
-      selectButton.setAttribute("aria-current", String(city.id === activeCityId));
+      const cityId = `${city.latitude},${city.longitude}`;
+      selectButton.setAttribute("aria-current", String(cityId === activeCityId));
       selectButton.addEventListener("click", () => onSelect(city));
 
       const icon = document.createElement("span");
       icon.className = "favorite-city-icon";
       icon.setAttribute("aria-hidden", "true");
-      icon.textContent = city.icon;
+      icon.textContent = city.icon || "📍";
 
       const copy = document.createElement("span");
       copy.className = "favorite-city-copy";
@@ -117,12 +121,14 @@ export function renderFavorites(favorites, activeCityId, onSelect, onRemove, uni
       name.textContent = city.name;
       const condition = document.createElement("span");
       condition.className = "favorite-city-condition";
-      condition.textContent = city.condition;
+      condition.textContent = city.condition || city.country;
       copy.append(name, condition);
 
       const temperature = document.createElement("span");
       temperature.className = "favorite-city-temperature";
-      temperature.textContent = `${displayTemperature(city.temperature, unit)}°`;
+      temperature.textContent = Number.isFinite(city.temperature)
+        ? `${displayTemperature(city.temperature, unit)}°`
+        : "—";
       selectButton.append(icon, copy, temperature);
 
       const removeButton = document.createElement("button");
@@ -130,7 +136,7 @@ export function renderFavorites(favorites, activeCityId, onSelect, onRemove, uni
       removeButton.type = "button";
       removeButton.textContent = "×";
       removeButton.setAttribute("aria-label", `Remove ${city.name} from favourites`);
-      removeButton.addEventListener("click", () => onRemove(city.id));
+      removeButton.addEventListener("click", () => onRemove(cityId));
 
       item.append(selectButton, removeButton);
       return item;
@@ -176,6 +182,32 @@ export function setError(message = "") {
 export function setSearchLoading(isLoading) {
   const form = document.querySelector("#search-form");
   const submitButton = form.querySelector('button[type="submit"]');
-  submitButton.textContent = isLoading ? "Loading…" : "Search";
+  submitButton.textContent = isLoading ? "Updating…" : "Search";
   form.setAttribute("aria-busy", String(isLoading));
+  elements.currentCard.classList.toggle("is-loading", isLoading);
+  elements.currentCard.setAttribute("aria-busy", String(isLoading));
+
+  if (isLoading) {
+    if (!elements.forecast.querySelector(".forecast-skeleton")) {
+      savedForecastContent = document.createDocumentFragment();
+      while (elements.forecast.firstChild) {
+        savedForecastContent.append(elements.forecast.firstChild);
+      }
+    }
+    elements.forecast.replaceChildren(
+      ...Array.from({ length: 7 }, () => {
+        const skeleton = document.createElement("div");
+        skeleton.className = "forecast-skeleton";
+        skeleton.setAttribute("aria-hidden", "true");
+        return skeleton;
+      }),
+    );
+    elements.forecast.setAttribute("aria-busy", "true");
+  } else {
+    if (elements.forecast.querySelector(".forecast-skeleton") && savedForecastContent) {
+      elements.forecast.replaceChildren(savedForecastContent);
+    }
+    savedForecastContent = null;
+    elements.forecast.setAttribute("aria-busy", "false");
+  }
 }

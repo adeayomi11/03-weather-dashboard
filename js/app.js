@@ -10,28 +10,60 @@ import {
   setTemperatureUnit,
 } from "./ui.js";
 
-const STORAGE_KEY = "swd-weather-favourites";
+const FAVORITES_KEY = "swd-weather-favourites";
+const LAST_CITY_KEY = "swd-weather-last-city";
 const UNIT_STORAGE_KEY = "swd-weather-temperature-unit";
 const searchForm = document.querySelector("#search-form");
 const searchInput = document.querySelector("#city-search");
 const favoriteToggle = document.querySelector("#favorite-toggle");
+const locationButton = document.querySelector("#use-location");
 const celsiusButton = document.querySelector("#celsius-button");
 const fahrenheitButton = document.querySelector("#fahrenheit-button");
 const dateElement = document.querySelector("#today-date");
 
 let currentWeather;
 let searchController;
+let requestId = 0;
 let temperatureUnit = loadTemperatureUnit();
 let favorites = loadFavorites();
 
+function isValidSavedCity(city) {
+  return (
+    city &&
+    typeof city.name === "string" &&
+    typeof city.country === "string" &&
+    Number.isFinite(city.latitude) &&
+    Number.isFinite(city.longitude)
+  );
+}
+
 function loadFavorites() {
   try {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = saved ? JSON.parse(saved) : null;
-    return Array.isArray(parsed) ? parsed : [];
+    const saved = window.localStorage.getItem(FAVORITES_KEY);
+    const parsed = saved ? JSON.parse(saved) : [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.filter(isValidSavedCity).map(({ name, country, latitude, longitude }) => ({
+      name,
+      country,
+      latitude,
+      longitude,
+    }));
   } catch (error) {
     console.error("Could not read saved weather favourites.", error);
     return [];
+  }
+}
+
+function loadLastCity() {
+  try {
+    const saved = window.localStorage.getItem(LAST_CITY_KEY);
+    const city = saved ? JSON.parse(saved) : null;
+    return isValidSavedCity(city) ? city : null;
+  } catch (error) {
+    console.error("Could not read the last viewed city.", error);
+    return null;
   }
 }
 
@@ -46,10 +78,25 @@ function loadTemperatureUnit() {
 
 function saveFavorites() {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites));
+    window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
   } catch (error) {
     console.error("Could not save weather favourites.", error);
     setError("Your browser could not save favourites. They will be available until you close this page.");
+  }
+}
+
+function saveLastCity(city) {
+  try {
+    const lastCity = {
+      name: city.name,
+      country: city.country,
+      latitude: city.latitude,
+      longitude: city.longitude,
+    };
+    window.localStorage.setItem(LAST_CITY_KEY, JSON.stringify(lastCity));
+  } catch (error) {
+    console.error("Could not save the last viewed city.", error);
+    setError("Your browser could not save the last viewed city.");
   }
 }
 
@@ -62,8 +109,20 @@ function saveTemperatureUnit() {
   }
 }
 
+function startRequest() {
+  searchController?.abort();
+  searchController = new AbortController();
+  requestId += 1;
+  clearCityResults();
+  setSearchLoading(true);
+  setError();
+  return { controller: searchController, id: requestId };
+}
+
 function isCurrentFavorite() {
-  return favorites.some((city) => city.id === currentWeather.id);
+  return favorites.some(
+    (city) => city.latitude === currentWeather.latitude && city.longitude === currentWeather.longitude,
+  );
 }
 
 function updateFavorites() {
@@ -71,17 +130,12 @@ function updateFavorites() {
     favorites,
     currentWeather?.id,
     (city) => {
-      searchController?.abort();
-      clearCityResults();
-      setSearchLoading(false);
-      currentWeather = city;
-      renderWeather(currentWeather, isCurrentFavorite(), temperatureUnit);
-      updateFavorites();
-      setError();
-      setStatus(`Showing live weather for ${currentWeather.name}.`);
+      const request = startRequest();
+      setStatus("Updating weather for your saved city…");
+      loadCityForecast(city, request);
     },
     (cityId) => {
-      favorites = favorites.filter((city) => city.id !== cityId);
+      favorites = favorites.filter((city) => `${city.latitude},${city.longitude}` !== cityId);
       saveFavorites();
       updateFavorites();
       if (currentWeather?.id === cityId) {
@@ -100,12 +154,12 @@ function handleRequestError(error) {
   setStatus();
 }
 
-async function loadCityForecast(city, controller) {
+async function loadCityForecast(city, request) {
   try {
     const forecast = await getForecast(city.latitude, city.longitude, {
-      signal: controller.signal,
+      signal: request.controller.signal,
     });
-    if (controller.signal.aborted) {
+    if (request.controller.signal.aborted || request.id !== requestId) {
       return;
     }
 
@@ -113,39 +167,34 @@ async function loadCityForecast(city, controller) {
       ...forecast,
       id: `${city.latitude},${city.longitude}`,
       name: city.name,
-      country: [city.region, city.country].filter(Boolean).join(", "),
+      country: city.country,
       latitude: city.latitude,
       longitude: city.longitude,
-      region: city.region,
     };
     renderWeather(currentWeather, isCurrentFavorite(), temperatureUnit);
+    saveLastCity(currentWeather);
     updateFavorites();
     setStatus(`Showing live weather for ${currentWeather.name}.`);
     searchInput.value = "";
     clearCityResults();
   } catch (error) {
-    if (!controller.signal.aborted) {
+    if (!request.controller.signal.aborted && request.id === requestId) {
       handleRequestError(error);
     }
   } finally {
-    if (searchController === controller) {
+    if (request.id === requestId) {
       setSearchLoading(false);
     }
   }
 }
 
 async function showWeather(cityName, { selectFirstMatch = false } = {}) {
-  searchController?.abort();
-  const controller = new AbortController();
-  searchController = controller;
-  clearCityResults();
-  setSearchLoading(true);
-  setError();
-  setStatus("Loading…");
+  const request = startRequest();
+  setStatus("Updating forecast…");
 
   try {
-    const cities = await searchCity(cityName, { signal: controller.signal });
-    if (controller.signal.aborted) {
+    const cities = await searchCity(cityName, { signal: request.controller.signal });
+    if (request.controller.signal.aborted || request.id !== requestId) {
       return;
     }
     if (!cities.length) {
@@ -156,26 +205,73 @@ async function showWeather(cityName, { selectFirstMatch = false } = {}) {
 
     if (cities.length > 1 && !selectFirstMatch) {
       renderCityResults(cities, (city) => {
-        clearCityResults();
         setError();
-        setStatus("Loading…");
+        setStatus("Updating forecast…");
         setSearchLoading(true);
-        loadCityForecast(city, controller);
+        loadCityForecast(city, request);
       });
       setStatus("Choose a location to see its forecast.");
       return;
     }
 
-    await loadCityForecast(cities[0], controller);
+    await loadCityForecast(cities[0], request);
   } catch (error) {
-    if (!controller.signal.aborted) {
+    if (!request.controller.signal.aborted && request.id === requestId) {
       handleRequestError(error);
     }
   } finally {
-    if (searchController === controller) {
+    if (request.id === requestId) {
       setSearchLoading(false);
     }
   }
+}
+
+function handleLocationError(error, id) {
+  if (id !== requestId) {
+    return;
+  }
+
+  setSearchLoading(false);
+  setStatus();
+  if (error.code === (error.PERMISSION_DENIED ?? 1)) {
+    setError("Location permission was denied. Allow location access in your browser settings, then try again.");
+  } else if (error.code === (error.POSITION_UNAVAILABLE ?? 2)) {
+    setError("Your location is unavailable right now. Try searching for a city instead.");
+  } else if (error.code === (error.TIMEOUT ?? 3)) {
+    setError("Finding your location took too long. Please try again.");
+  } else {
+    setError("We couldn't get your location. You can still search for a city.");
+  }
+}
+
+function requestLocation({ automatic = false } = {}) {
+  if (!navigator.geolocation) {
+    setError("Location is not supported by this browser. Search for a city instead.");
+    setStatus();
+    return;
+  }
+
+  const request = startRequest();
+  setStatus(automatic ? "Finding your location…" : "Waiting for your location…");
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      if (request.id !== requestId) {
+        return;
+      }
+      setStatus("Updating forecast…");
+      loadCityForecast(
+        {
+          name: "My location",
+          country: "Your current location",
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        },
+        request,
+      );
+    },
+    (error) => handleLocationError(error, request.id),
+    { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 },
+  );
 }
 
 function setUnit(unit) {
@@ -191,6 +287,35 @@ function setUnit(unit) {
   updateFavorites();
 }
 
+async function initialize() {
+  setTemperatureUnit(temperatureUnit);
+  updateFavorites();
+
+  const lastCity = loadLastCity();
+  if (lastCity) {
+    const request = startRequest();
+    setStatus("Restoring your last city…");
+    await loadCityForecast(lastCity, request);
+    return;
+  }
+
+  if (navigator.geolocation && navigator.permissions?.query) {
+    try {
+      const permission = await navigator.permissions.query({ name: "geolocation" });
+      if (permission.state === "granted" && requestId === 0) {
+        requestLocation({ automatic: true });
+        return;
+      }
+    } catch (error) {
+      console.error("Could not check location permission.", error);
+    }
+  }
+
+  if (requestId === 0) {
+    showWeather("Calgary", { selectFirstMatch: true });
+  }
+}
+
 searchForm.addEventListener("submit", (event) => {
   event.preventDefault();
   showWeather(searchInput.value);
@@ -202,9 +327,19 @@ favoriteToggle.addEventListener("click", () => {
   }
 
   if (isCurrentFavorite()) {
-    favorites = favorites.filter((city) => city.id !== currentWeather.id);
+    favorites = favorites.filter(
+      (city) => city.latitude !== currentWeather.latitude || city.longitude !== currentWeather.longitude,
+    );
   } else {
-    favorites = [currentWeather, ...favorites];
+    favorites = [
+      {
+        name: currentWeather.name,
+        country: currentWeather.country,
+        latitude: currentWeather.latitude,
+        longitude: currentWeather.longitude,
+      },
+      ...favorites,
+    ];
   }
 
   saveFavorites();
@@ -212,6 +347,7 @@ favoriteToggle.addEventListener("click", () => {
   updateFavorites();
 });
 
+locationButton.addEventListener("click", () => requestLocation());
 celsiusButton.addEventListener("click", () => setUnit("celsius"));
 fahrenheitButton.addEventListener("click", () => setUnit("fahrenheit"));
 
@@ -221,6 +357,4 @@ dateElement.textContent = new Intl.DateTimeFormat("en", {
   day: "numeric",
 }).format(new Date());
 
-setTemperatureUnit(temperatureUnit);
-updateFavorites();
-showWeather("Calgary", { selectFirstMatch: true });
+initialize();
