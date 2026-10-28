@@ -2,7 +2,6 @@ const elements = {
   cityName: document.querySelector("#current-heading"),
   country: document.querySelector("#location-country"),
   temperature: document.querySelector("#current-temperature"),
-  feelsLike: document.querySelector("#feels-like"),
   condition: document.querySelector("#condition-text"),
   conditionIcon: document.querySelector("#condition-icon"),
   wind: document.querySelector("#wind-speed"),
@@ -28,7 +27,6 @@ export function renderWeather(weather, isFavorite) {
   elements.cityName.textContent = weather.name;
   elements.country.textContent = weather.country;
   elements.temperature.textContent = weather.temperature;
-  elements.feelsLike.textContent = weather.feelsLike;
   elements.condition.textContent = weather.condition;
   elements.conditionIcon.textContent = weather.icon;
   elements.wind.textContent = weather.wind;
@@ -141,6 +139,6 @@ export function setSearchLoading(isLoading) {
   const input = form.querySelector("#city-search");
   submitButton.disabled = isLoading;
   input.disabled = isLoading;
-  submitButton.textContent = isLoading ? "Searching…" : "Search";
+  submitButton.textContent = isLoading ? "Loading…" : "Search";
   form.setAttribute("aria-busy", String(isLoading));
 }

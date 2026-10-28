@@ -1,4 +1,4 @@
-import { getWeather } from "./api.js";
+import { getForecast, searchCity } from "./api.js";
 import { renderFavorites, renderWeather, setError, setSearchLoading, setStatus } from "./ui.js";
 
 const STORAGE_KEY = "swd-weather-favourites";
@@ -43,7 +43,7 @@ function updateFavorites() {
       renderWeather(currentWeather, isCurrentFavorite());
       updateFavorites();
       setError();
-      setStatus(`Showing sample weather for ${currentWeather.name}.`);
+      setStatus(`Showing live weather for ${currentWeather.name}.`);
     },
     (cityId) => {
       favorites = favorites.filter((city) => city.id !== cityId);
@@ -59,13 +59,27 @@ function updateFavorites() {
 async function showWeather(cityName) {
   setSearchLoading(true);
   setError();
-  setStatus("Finding your forecast…");
+  setStatus("Loading…");
   try {
-    const weather = await getWeather(cityName);
+    const cities = await searchCity(cityName);
+    if (!cities.length) {
+      setError("We couldn't find that city. Check the spelling or try a nearby city.");
+      setStatus();
+      return;
+    }
+
+    const city = cities[0];
+    const forecast = await getForecast(city.latitude, city.longitude);
+    const weather = {
+      ...forecast,
+      id: `${city.latitude},${city.longitude}`,
+      name: city.name,
+      country: city.country,
+    };
     currentWeather = weather;
     renderWeather(currentWeather, isCurrentFavorite());
     updateFavorites();
-    setStatus(`Showing sample weather for ${weather.name}.`);
+    setStatus(`Showing live weather for ${weather.name}.`);
     searchInput.value = "";
   } catch (error) {
     setError(error instanceof Error ? error.message : "Something went wrong while loading the forecast.");

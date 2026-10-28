@@ -1,158 +1,80 @@
-const forecastIcons = ["☀️", "🌤️", "🌦️", "⛅", "☀️", "🌥️", "🌦️"];
-const forecastConditions = [
-  "Sunny",
-  "Partly cloudy",
-  "Light rain",
-  "Cloudy",
-  "Sunny",
-  "Mostly cloudy",
-  "Showers",
-];
+import { weatherCodes } from "./weatherCodes.js";
 
-const cityData = [
-  {
-    name: "Calgary",
-    country: "Alberta, Canada",
-    aliases: ["calgary"],
-    temperature: 18,
-    feelsLike: 16,
-    condition: "Mostly sunny",
-    icon: "☀️",
-    wind: 12,
-    humidity: 42,
-    timeZone: "America/Edmonton",
-    forecast: [18, 19, 16, 15, 20, 17, 14],
-  },
-  {
-    name: "London",
-    country: "England, United Kingdom",
-    aliases: ["london"],
-    temperature: 14,
-    feelsLike: 12,
-    condition: "Light rain",
-    icon: "🌦️",
-    wind: 18,
-    humidity: 76,
-    timeZone: "Europe/London",
-    forecast: [14, 15, 13, 16, 17, 15, 14],
-  },
-  {
-    name: "Tokyo",
-    country: "Tokyo, Japan",
-    aliases: ["tokyo"],
-    temperature: 23,
-    feelsLike: 24,
-    condition: "Partly cloudy",
-    icon: "🌤️",
-    wind: 9,
-    humidity: 58,
-    timeZone: "Asia/Tokyo",
-    forecast: [23, 24, 22, 25, 26, 24, 23],
-  },
-  {
-    name: "New York",
-    country: "New York, United States",
-    aliases: ["new york", "nyc", "new york city"],
-    temperature: 21,
-    feelsLike: 20,
-    condition: "Clear skies",
-    icon: "☀️",
-    wind: 14,
-    humidity: 48,
-    timeZone: "America/New_York",
-    forecast: [21, 22, 20, 19, 23, 22, 20],
-  },
-  {
-    name: "Paris",
-    country: "Île-de-France, France",
-    aliases: ["paris"],
-    temperature: 17,
-    feelsLike: 16,
-    condition: "Partly cloudy",
-    icon: "⛅",
-    wind: 11,
-    humidity: 54,
-    timeZone: "Europe/Paris",
-    forecast: [17, 18, 16, 19, 20, 18, 17],
-  },
-  {
-    name: "Sydney",
-    country: "New South Wales, Australia",
-    aliases: ["sydney"],
-    temperature: 22,
-    feelsLike: 21,
-    condition: "Sunny",
-    icon: "☀️",
-    wind: 16,
-    humidity: 51,
-    timeZone: "Australia/Sydney",
-    forecast: [22, 23, 21, 24, 25, 23, 22],
-  },
-  {
-    name: "Toronto",
-    country: "Ontario, Canada",
-    aliases: ["toronto"],
-    temperature: 19,
-    feelsLike: 18,
-    condition: "Mostly cloudy",
-    icon: "🌥️",
-    wind: 13,
-    humidity: 61,
-    timeZone: "America/Toronto",
-    forecast: [19, 20, 18, 21, 22, 20, 19],
-  },
-];
+async function fetchJson(url) {
+  let response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    const reason = error instanceof Error ? ` ${error.message}` : "";
+    throw new Error(`Could not reach Open-Meteo.${reason}`);
+  }
 
-function getForecast(temperatures) {
-  const today = new Date();
-  const weekday = new Intl.DateTimeFormat("en", { weekday: "short" });
+  if (!response.ok) {
+    throw new Error(
+      `Open-Meteo request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""}).`,
+    );
+  }
 
-  return temperatures.map((high, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() + index);
-
-    return {
-      day: index === 0 ? "Today" : weekday.format(date),
-      icon: forecastIcons[index],
-      condition: forecastConditions[index],
-      high,
-      low: high - (index % 2 === 0 ? 6 : 5),
-    };
-  });
+  try {
+    return await response.json();
+  } catch {
+    throw new Error("Open-Meteo returned an invalid response.");
+  }
 }
 
-export async function getWeather(cityName) {
-  const query = cityName.trim();
+export async function searchCity(name) {
+  const query = name.trim();
   if (!query) {
     throw new Error("Enter a city name to search.");
   }
 
-  const normalizedQuery = query.toLocaleLowerCase();
-  const match = cityData.find(
-    (city) =>
-      city.aliases.includes(normalizedQuery) ||
-      city.name.toLocaleLowerCase() === normalizedQuery,
-  );
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5`;
+  const data = await fetchJson(url);
 
-  if (match) {
-    return {
-      ...match,
-      id: match.name.toLocaleLowerCase(),
-      forecast: getForecast(match.forecast),
-    };
-  }
+  return (data.results ?? []).map((city) => ({
+    name: city.name,
+    country: [city.admin1, city.country].filter(Boolean).join(", "),
+    latitude: city.latitude,
+    longitude: city.longitude,
+    timezone: city.timezone || "UTC",
+  }));
+}
+
+export async function getForecast(latitude, longitude) {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    current: "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min",
+    timezone: "auto",
+  });
+  const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params}`);
+  const currentCode = weatherCodes[data.current.weather_code] ?? {
+    label: "Unknown conditions",
+    emoji: "🌡️",
+  };
+  const weekday = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" });
 
   return {
-    id: query.toLocaleLowerCase(),
-    name: query.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase()),
-    country: "Sample location",
-    temperature: 18,
-    feelsLike: 16,
-    condition: "Partly cloudy",
-    icon: "🌤️",
-    wind: 12,
-    humidity: 48,
-    timeZone: "UTC",
-    forecast: getForecast([18, 19, 16, 15, 20, 17, 14]),
+    temperature: Math.round(data.current.temperature_2m),
+    condition: currentCode.label,
+    icon: currentCode.emoji,
+    wind: Math.round(data.current.wind_speed_10m),
+    humidity: Math.round(data.current.relative_humidity_2m),
+    timeZone: data.timezone || "UTC",
+    forecast: data.daily.time.map((date, index) => {
+      const code = weatherCodes[data.daily.weather_code[index]] ?? {
+        label: "Unknown conditions",
+        emoji: "🌡️",
+      };
+
+      return {
+        day: index === 0 ? "Today" : weekday.format(new Date(`${date}T12:00:00Z`)),
+        icon: code.emoji,
+        condition: code.label,
+        high: Math.round(data.daily.temperature_2m_max[index]),
+        low: Math.round(data.daily.temperature_2m_min[index]),
+      };
+    }),
   };
 }
