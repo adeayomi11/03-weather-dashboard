@@ -2,6 +2,7 @@ const elements = {
   cityName: document.querySelector("#current-heading"),
   country: document.querySelector("#location-country"),
   temperature: document.querySelector("#current-temperature"),
+  temperatureScale: document.querySelector("#temperature-scale"),
   condition: document.querySelector("#condition-text"),
   conditionIcon: document.querySelector("#condition-icon"),
   wind: document.querySelector("#wind-speed"),
@@ -13,7 +14,15 @@ const elements = {
   favoriteToggle: document.querySelector("#favorite-toggle"),
   status: document.querySelector("#status-message"),
   error: document.querySelector("#error-message"),
+  cityResults: document.querySelector("#city-results"),
+  celsiusButton: document.querySelector("#celsius-button"),
+  fahrenheitButton: document.querySelector("#fahrenheit-button"),
 };
+
+function displayTemperature(celsius, unit) {
+  const temperature = unit === "fahrenheit" ? (celsius * 9) / 5 + 32 : celsius;
+  return Math.round(temperature);
+}
 
 function formatLocalTime(timeZone) {
   return new Intl.DateTimeFormat("en", {
@@ -23,10 +32,11 @@ function formatLocalTime(timeZone) {
   }).format(new Date());
 }
 
-export function renderWeather(weather, isFavorite) {
+export function renderWeather(weather, isFavorite, unit) {
   elements.cityName.textContent = weather.name;
   elements.country.textContent = weather.country;
-  elements.temperature.textContent = weather.temperature;
+  elements.temperature.textContent = displayTemperature(weather.temperature, unit);
+  elements.temperatureScale.textContent = unit === "fahrenheit" ? "F" : "C";
   elements.condition.textContent = weather.condition;
   elements.conditionIcon.textContent = weather.icon;
   elements.wind.textContent = weather.wind;
@@ -43,7 +53,11 @@ export function renderWeather(weather, isFavorite) {
     ...weather.forecast.map((day) => {
       const card = document.createElement("article");
       card.className = "forecast-card";
-      card.setAttribute("aria-label", `${day.day}: ${day.condition}, high ${day.high}, low ${day.low}`);
+      const unitLabel = unit === "fahrenheit" ? "F" : "C";
+      card.setAttribute(
+        "aria-label",
+        `${day.day}: ${day.condition}, high ${displayTemperature(day.high, unit)}° ${unitLabel}, low ${displayTemperature(day.low, unit)}° ${unitLabel}`,
+      );
 
       const dayName = document.createElement("span");
       dayName.className = "forecast-day";
@@ -58,10 +72,10 @@ export function renderWeather(weather, isFavorite) {
       temperatures.className = "forecast-temperatures";
       const high = document.createElement("span");
       high.className = "forecast-high";
-      high.textContent = `${day.high}°`;
+      high.textContent = `${displayTemperature(day.high, unit)}°`;
       const low = document.createElement("span");
       low.className = "forecast-low";
-      low.textContent = `${day.low}°`;
+      low.textContent = `${displayTemperature(day.low, unit)}°`;
       temperatures.append(high, low);
       card.append(dayName, icon, temperatures);
       return card;
@@ -69,7 +83,7 @@ export function renderWeather(weather, isFavorite) {
   );
 }
 
-export function renderFavorites(favorites, activeCityId, onSelect, onRemove) {
+export function renderFavorites(favorites, activeCityId, onSelect, onRemove, unit) {
   elements.favoritesCount.textContent = String(favorites.length);
 
   if (!favorites.length) {
@@ -108,7 +122,7 @@ export function renderFavorites(favorites, activeCityId, onSelect, onRemove) {
 
       const temperature = document.createElement("span");
       temperature.className = "favorite-city-temperature";
-      temperature.textContent = `${city.temperature}°`;
+      temperature.textContent = `${displayTemperature(city.temperature, unit)}°`;
       selectButton.append(icon, copy, temperature);
 
       const removeButton = document.createElement("button");
@@ -124,6 +138,32 @@ export function renderFavorites(favorites, activeCityId, onSelect, onRemove) {
   );
 }
 
+export function renderCityResults(cities, onSelect) {
+  elements.cityResults.replaceChildren(
+    ...cities.map((city) => {
+      const option = document.createElement("button");
+      option.className = "city-result-option";
+      option.type = "button";
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", "false");
+      option.textContent = [city.name, city.region, city.country].filter(Boolean).join(", ");
+      option.addEventListener("click", () => onSelect(city));
+      return option;
+    }),
+  );
+  elements.cityResults.hidden = cities.length === 0;
+}
+
+export function clearCityResults() {
+  elements.cityResults.replaceChildren();
+  elements.cityResults.hidden = true;
+}
+
+export function setTemperatureUnit(unit) {
+  elements.celsiusButton.setAttribute("aria-pressed", String(unit === "celsius"));
+  elements.fahrenheitButton.setAttribute("aria-pressed", String(unit === "fahrenheit"));
+}
+
 export function setStatus(message = "") {
   elements.status.textContent = message;
 }
@@ -136,9 +176,6 @@ export function setError(message = "") {
 export function setSearchLoading(isLoading) {
   const form = document.querySelector("#search-form");
   const submitButton = form.querySelector('button[type="submit"]');
-  const input = form.querySelector("#city-search");
-  submitButton.disabled = isLoading;
-  input.disabled = isLoading;
   submitButton.textContent = isLoading ? "Loading…" : "Search";
   form.setAttribute("aria-busy", String(isLoading));
 }

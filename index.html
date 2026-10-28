@@ -35,22 +35,31 @@
           </span>
         </a>
 
-        <form class="search-form" id="search-form" role="search">
-          <label class="sr-only" for="city-search">Search for a city</label>
-          <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="10.8" cy="10.8" r="6.8" />
-            <path d="m16 16 4 4" />
-          </svg>
-          <input
-            id="city-search"
-            name="city"
-            type="search"
-            placeholder="Search any city..."
-            autocomplete="off"
-            required
-          />
-          <button type="submit">Search</button>
-        </form>
+        <div class="search-wrap">
+          <form class="search-form" id="search-form" role="search">
+            <label class="sr-only" for="city-search">Search for a city</label>
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="10.8" cy="10.8" r="6.8" />
+              <path d="m16 16 4 4" />
+            </svg>
+            <input
+              id="city-search"
+              name="city"
+              type="search"
+              placeholder="Search any city..."
+              autocomplete="off"
+              required
+            />
+            <button type="submit">Search</button>
+          </form>
+          <div
+            class="city-results"
+            id="city-results"
+            role="listbox"
+            aria-label="Choose a city"
+            hidden
+          ></div>
+        </div>
 
         <div class="header-note">
           <span class="live-dot" aria-hidden="true"></span>
@@ -102,7 +111,7 @@
                 <div class="temperature-line">
                   <span class="temperature" id="current-temperature">18</span>
                   <span class="temperature-unit">°</span>
-                  <span class="temperature-scale">C</span>
+                  <span class="temperature-scale" id="temperature-scale">C</span>
                 </div>
                 <p class="feels-like">Current air temperature</p>
               </div>
@@ -160,7 +169,13 @@
                 <p class="card-kicker">PLAN AHEAD</p>
                 <h2 id="forecast-heading">7-day forecast</h2>
               </div>
-              <span class="section-note">The week, at a glance</span>
+              <div class="forecast-controls">
+                <span class="section-note">The week, at a glance</span>
+                <div class="temperature-units" role="group" aria-label="Temperature units">
+                  <button id="celsius-button" type="button" aria-pressed="true">°C</button>
+                  <button id="fahrenheit-button" type="button" aria-pressed="false">°F</button>
+                </div>
+              </div>
             </div>
             <div class="forecast-grid" id="forecast-grid" aria-live="polite"></div>
           </section>

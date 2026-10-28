@@ -1,10 +1,13 @@
 import { weatherCodes } from "./weatherCodes.js";
 
-async function fetchJson(url) {
+async function fetchJson(url, signal) {
   let response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, { signal });
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw error;
+    }
     const reason = error instanceof Error ? ` ${error.message}` : "";
     throw new Error(`Could not reach Open-Meteo.${reason}`);
   }
@@ -22,25 +25,26 @@ async function fetchJson(url) {
   }
 }
 
-export async function searchCity(name) {
+export async function searchCity(name, { signal } = {}) {
   const query = name.trim();
   if (!query) {
     throw new Error("Enter a city name to search.");
   }
 
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5`;
-  const data = await fetchJson(url);
+  const data = await fetchJson(url, signal);
 
   return (data.results ?? []).map((city) => ({
     name: city.name,
-    country: [city.admin1, city.country].filter(Boolean).join(", "),
+    region: city.admin1 || "",
+    country: city.country || "",
     latitude: city.latitude,
     longitude: city.longitude,
     timezone: city.timezone || "UTC",
   }));
 }
 
-export async function getForecast(latitude, longitude) {
+export async function getForecast(latitude, longitude, { signal } = {}) {
   const params = new URLSearchParams({
     latitude: String(latitude),
     longitude: String(longitude),
@@ -48,15 +52,15 @@ export async function getForecast(latitude, longitude) {
     daily: "weather_code,temperature_2m_max,temperature_2m_min",
     timezone: "auto",
   });
-  const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params}`);
+  const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params}`, signal);
   const currentCode = weatherCodes[data.current.weather_code] ?? {
     label: "Unknown conditions",
     emoji: "🌡️",
   };
-  const weekday = new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" });
+  const weekday = new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" });
 
   return {
-    temperature: Math.round(data.current.temperature_2m),
+    temperature: data.current.temperature_2m,
     condition: currentCode.label,
     icon: currentCode.emoji,
     wind: Math.round(data.current.wind_speed_10m),
@@ -69,11 +73,11 @@ export async function getForecast(latitude, longitude) {
       };
 
       return {
-        day: index === 0 ? "Today" : weekday.format(new Date(`${date}T12:00:00Z`)),
+        day: weekday.format(new Date(`${date}T12:00:00Z`)),
         icon: code.emoji,
         condition: code.label,
-        high: Math.round(data.daily.temperature_2m_max[index]),
-        low: Math.round(data.daily.temperature_2m_min[index]),
+        high: data.daily.temperature_2m_max[index],
+        low: data.daily.temperature_2m_min[index],
       };
     }),
   };
